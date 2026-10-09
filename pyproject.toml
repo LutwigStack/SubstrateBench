@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "substratebench"
+version = "0.1.0"
+description = "A reproducible reference benchmark for replacing four-bit task memory"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+substratebench = "substratebench.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
