@@ -3,10 +3,11 @@
 import argparse
 import os
 import sys
+from functools import partial
 
 from .benchmark import evaluate, write_result
 from .memory import BinaryMemory, EncodedMemory
-from .task import reference_step, zero_step
+from .task import TASKS, reference_step, zero_step
 
 
 def main(argv=None):
@@ -16,19 +17,20 @@ def main(argv=None):
     parser.add_argument("--episodes", type=int, default=64, help="Even episode count per role, 2 to 128")
     parser.add_argument("--memory", choices=("binary", "encoded"), default="encoded")
     parser.add_argument("--controller", choices=("oracle", "zero"), default="oracle")
+    parser.add_argument("--task", choices=TASKS, default="gated_xor")
     args = parser.parse_args(argv)
     memory = BinaryMemory() if args.memory == "binary" else EncodedMemory()
-    controller = reference_step if args.controller == "oracle" else zero_step
+    controller = partial(reference_step, task=args.task) if args.controller == "oracle" else zero_step
     label = "reference_oracle" if args.controller == "oracle" else "zero_source_control"
     try:
         if os.path.lexists(args.output):
             raise FileExistsError(f"Artifact already exists: {args.output}")
         result = evaluate(controller, memory, seed=args.seed, episodes=args.episodes,
-                          controller_label=label)
+                          controller_label=label, task=args.task)
         write_result(result, args.output)
     except (ValueError, OSError) as error:
         print(f"substratebench: {error}", file=sys.stderr)
         return 2
-    print(f"{result['verdict'].upper()} — {label}, {result['substrate']}; artifact: {args.output}")
+    print(f"{result['verdict'].upper()} — {args.task}, {label}, {result['substrate']}; artifact: {args.output}")
     print("Reference harness: this run does not demonstrate learned-model transfer.")
     return 0 if result["verdict"] == "pass" else 1

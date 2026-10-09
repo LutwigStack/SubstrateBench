@@ -1,13 +1,14 @@
 # SubstrateBench
 
-**STATUS: implemented — public reference benchmark, version 0.1.0.**
+**STATUS: implemented — public reference benchmark, version 0.2.0.**
 
 SubstrateBench measures whether a fixed task controller can keep using a four-bit
-memory after replacing its storage implementation. This first release is a small,
+memory after replacing its storage implementation. The package is a small,
 reproducible digital benchmark that other people can install and extend. It has
 no runtime dependencies.
 
-This initial promotion is scoped in [SB-001](docs/promotion/SB-001.md);
+The initial harness is scoped in [SB-001](docs/promotion/SB-001.md) and the two
+additional task laws in [SB-002](docs/promotion/SB-002.md);
 repository boundaries are described in [AGENTS.md](AGENTS.md).
 
 The bundled controller is an exact-rule **reference oracle**, not a trained model.
@@ -25,9 +26,11 @@ python -m pip install .
 substratebench --output results/reference.json
 python -m substratebench --memory binary --output results/binary.json
 python -m substratebench --controller zero --output results/negative.json
+substratebench --task carry_counter --output results/carry.json
+substratebench --task conditional_logic --output results/conditional.json
 ```
 
-The first two commands run the reference controller; the third intentionally
+The oracle commands run the reference controller. The zero control intentionally
 fails the quality criteria and returns exit code 1. Exit code 0 means the declared
 reference-profile criteria passed. Exit code 2 means invalid arguments, malformed
 controller output, or an I/O error. Output paths must be new: existing artifacts
@@ -81,7 +84,7 @@ A SET must preserve the other three bits. Failure is reported as
 `interface_not_qualified`; task routes remain unattempted, with their costs zero.
 This is qualification in a known finite domain, not generalization.
 
-The task changes the selected register only when both command bits are 1.
+The default gated-XOR task changes the selected register only when both command bits are 1.
 A descriptive source-law check evaluates all 16 states × 16 commands. The runner
 then executes each sequence freely, reading from memory on every step and writing
 the proposed state through four fixed SET calls. Gold labels stay in the evaluator
@@ -95,6 +98,34 @@ every command. Primary random-role thresholds are 99% prefix-state accuracy,
 every random length. History/gate/repeat roles are descriptive. These controls
 test dependence on visible memory operations; they cannot prove callback purity
 or the causal contribution of trained weights.
+
+Select the task with `--task` or `evaluate(..., task="carry_counter")`. The
+default remains `gated_xor`. All laws use `Command(register, gate, value)`;
+`gate=0` preserves the complete state. Register0 is the least significant bit.
+
+| Task | Active command (`gate=1`) |
+| --- | --- |
+| `gated_xor` | Flip the selected bit when `value=1`. |
+| `carry_counter` | Add `2**register` when `value=1`, subtract it when `value=0`, modulo 16; carries and borrows may change other bits. |
+| `conditional_logic` | With `value=0`, swap the selected bit and its next cyclic neighbor. With `value=1`, flip the selected bit and also its opposite bit if the old next-neighbor bit is 1. Updates are simultaneous. |
+
+For a reference callback in the API, bind the same task explicitly:
+
+```python
+from functools import partial
+from substratebench import BinaryMemory, evaluate, reference_step
+
+result = evaluate(partial(reference_step, task="carry_counter"),
+                  BinaryMemory(), task="carry_counter", episodes=4)
+```
+
+Custom callbacks receive the same two arguments for every task; the evaluator
+does not tell the callback the Gold state. `diagnostic-history` pairs change the
+first command's value. The legacy `diagnostic-gate` pairs change the last
+command's value while keeping gate=1 in both members; this is a payload contrast
+(subtract/add for the counter), not a gate-on/off causal test. Role names and
+command construction remain unchanged. Descriptive pairs do not guarantee
+different final states for every law.
 
 Reports separate completion status from the pass/fail verdict and contain role
 metrics, raw outputs, sequence identities, qualification rows, implementation
@@ -110,14 +141,34 @@ requires separate instrumentation supplied by the integrator.
 
 ## Reproducibility and scope
 
-The profile is `gated-xor-memory-reference-0.1`; the sampler uses Python's seeded
+The default profile remains `gated-xor-memory-reference-0.1`; new task profiles
+are `carry-counter-memory-reference-0.2` and
+`conditional-logic-memory-reference-0.2`. Reports include `task_id` as an additive
+schema-version-1 field and package version 0.2.0. The sampler uses Python's seeded
 MT19937 `getrandbits` with explicit rejection sampling. Sequence IDs are SHA256
 of ordered uint8 six-byte commands (four one-hot register bits, gate, value),
-compatible with the historical lab task identity codec. Roles do not affect IDs.
+unchanged from public version 0.1.0. Roles and task names do not affect IDs.
 The suite rejects duplicates and any supplied `exclude_ids` across both original
 and register-permuted commands; it cannot verify that
 the supplied training-ID list is complete. New random seeds do not establish
 independent holdout substrate families. Permuted queries are derived paired cases.
+
+Historical Lab command arrays order the last two features as **value, gate**;
+the public codec orders them as **gate, value**. The former claim of direct
+historical compatibility was incorrect for asymmetric commands. To exclude Lab
+training episodes, regenerate public IDs from their original ordered commands:
+
+```python
+from substratebench import Command, sequence_id
+
+lab_episode_rows = [(0, 0, 1, 0, 1, 0), (1, 0, 0, 0, 0, 1)]
+commands = [Command(list(row[:4]).index(1), gate=int(row[5]), value=int(row[4]))
+            for row in lab_episode_rows]
+public_id = sequence_id(commands)
+```
+
+Pass those regenerated IDs through `exclude_ids`. A digest-only Lab ID list
+cannot be converted without the original command arrays.
 
 This release replaces **memory storage**, while the controller's computation stays
 in Python. It does not implement the broader proposed black-box dynamical-slot

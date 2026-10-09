@@ -1,13 +1,14 @@
-"""The four-register gated-XOR task and reproducible public evaluation cases."""
+"""Three four-bit finite task laws and reproducible public evaluation cases."""
 
-from dataclasses import dataclass
 import hashlib
-from itertools import islice
 import random
+from dataclasses import dataclass
+from itertools import islice
 
 REGISTERS = 4
 LENGTHS = (12, 24, 64, 128)
 SAMPLER = "python-mt19937-getrandbits-rejection-v1"
+TASKS = ("gated_xor", "carry_counter", "conditional_logic")
 State = tuple[int, int, int, int]
 
 
@@ -34,10 +35,26 @@ class Command:
             raise ValueError("Gate and value must be integer bits")
 
 
-def reference_step(state: State, command: Command) -> State:
+def reference_step(state: State, command: Command, *, task="gated_xor") -> State:
     """An exact-rule oracle for testing the harness, not a trained model."""
-    result = list(state_bits(state))
-    result[command.register] ^= command.gate & command.value
+    old = state_bits(state)
+    if task not in TASKS:
+        raise ValueError("Unknown task law")
+    result = list(old)
+    register = command.register
+    if task == "gated_xor":
+        result[register] ^= command.gate & command.value
+    elif command.gate:
+        if task == "carry_counter":
+            number = sum(bit << index for index, bit in enumerate(old))
+            number = (number + (2 * command.value - 1) * (1 << register)) % 16
+            result = [(number >> index) & 1 for index in range(4)]
+        elif command.value == 0:
+            neighbor = (register + 1) % 4
+            result[register], result[neighbor] = old[neighbor], old[register]
+        else:
+            result[register] ^= 1
+            result[(register + 2) % 4] ^= old[(register + 1) % 4]
     return tuple(result)
 
 
@@ -58,7 +75,7 @@ def all_commands():
 
 
 def sequence_id(commands):
-    """SHA256 of historical-compatible six-byte one-hot/gate/value commands."""
+    """SHA256 of public six-byte one-hot/gate/value commands; Lab swaps the last two."""
     return hashlib.sha256(bytes(value for command in commands
                                 for value in (*[int(bit == command.register)
                                                 for bit in range(4)],

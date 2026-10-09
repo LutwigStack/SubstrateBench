@@ -50,7 +50,7 @@ class TaskTests(unittest.TestCase):
                 if role["kind"] == "history":
                     self.assertEqual(left["commands"][-1], right["commands"][-1])
 
-    def test_historical_identity_codec(self):
+    def test_public_identity_codec_unchanged(self):
         import hashlib
         commands = (Command(2, 1, 0), Command(0, 1, 1))
         encoded = bytes((0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1))

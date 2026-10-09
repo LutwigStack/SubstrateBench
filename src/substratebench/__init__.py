@@ -1,6 +1,6 @@
 """A small public reference benchmark; no learned model is bundled."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .benchmark import evaluate, write_result
 from .memory import BinaryMemory, EncodedMemory

@@ -1,17 +1,30 @@
 """Memory-ownership evaluation and atomic, exclusive result persistence."""
 
 import hashlib
-from itertools import islice
 import json
 import os
-from pathlib import Path
 import tempfile
 import time
+from itertools import islice
+from pathlib import Path
 
-from .task import (LENGTHS, SAMPLER, all_commands, all_states, make_suite,
-                   permute_command, reference_step, sequence_id, state_bits)
+from .task import (
+    LENGTHS,
+    SAMPLER,
+    TASKS,
+    all_commands,
+    all_states,
+    make_suite,
+    permute_command,
+    reference_step,
+    sequence_id,
+    state_bits,
+)
 
 PROFILE = "gated-xor-memory-reference-0.1"
+PROFILES = {"gated_xor": PROFILE,
+            "carry_counter": "carry-counter-memory-reference-0.2",
+            "conditional_logic": "conditional-logic-memory-reference-0.2"}
 ROUTES = ("normal", "permutation", "zero", "reset")
 
 
@@ -81,7 +94,7 @@ def _qualification(memory, cost):
 
 
 def evaluate(next_state, memory, *, seed=42, episodes=64, exclude_ids=(),
-             controller_label="user-supplied"):
+             controller_label="user-supplied", task="gated_xor"):
     """Run a stateless controller against memory, without gold or history inputs.
 
     next_state(current_bits, Command) must return four Python integer bits.
@@ -92,6 +105,8 @@ def evaluate(next_state, memory, *, seed=42, episodes=64, exclude_ids=(),
     started = time.perf_counter()
     if not callable(next_state):
         raise ValueError("next_state must be callable")
+    if task not in TASKS:
+        raise ValueError("Unknown task law")
     if not isinstance(controller_label, str) or not 1 <= len(controller_label) <= 160:
         raise ValueError("Controller label must contain 1 to 160 characters")
     excluded = tuple(islice(exclude_ids, 100_001))
@@ -100,7 +115,7 @@ def evaluate(next_state, memory, *, seed=42, episodes=64, exclude_ids=(),
              **{route: _ledger() for route in ROUTES}}
     qualification = _qualification(memory, costs["interface_qualification"])
     result = {
-        "schema_version": 1, "benchmark_version": "0.1.0", "profile": PROFILE,
+        "schema_version": 1, "benchmark_version": "0.2.0", "profile": PROFILES[task], "task_id": task,
         "status": "completed" if qualification["qualified"] else "interface_not_qualified",
         "verdict": "fail", "controller": controller_label,
         "substrate": type(memory).__name__, "scope": "known digital memory replacement",
@@ -136,7 +151,7 @@ def evaluate(next_state, memory, *, seed=42, episodes=64, exclude_ids=(),
                 diagnostic_cost["controller_calls"] += 1
                 predicted = state_bits(next_state(state, command))
                 diagnostic_cost["reference_label_steps"] += 1
-                expected = reference_step(state, command)
+                expected = reference_step(state, command, task=task)
                 rows.append({"state": state,
                              "command": [command.register, command.gate, command.value],
                              "predicted": predicted, "correct": predicted == expected})
@@ -169,7 +184,7 @@ def evaluate(next_state, memory, *, seed=42, episodes=64, exclude_ids=(),
                         observed = _read(memory, route_cost)
                         predicted.append(observed)
                         route_cost["reference_label_steps"] += 1
-                        gold = reference_step(gold, command)
+                        gold = reference_step(gold, command, task=task)
                         gold_states.append(gold)
                     outputs.append(predicted)
                     targets.append(gold_states)
