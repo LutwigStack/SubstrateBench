@@ -17,12 +17,13 @@ def main(argv=None):
     parser.add_argument("--episodes", type=int, default=64, help="Even episode count per role, 2 to 128")
     parser.add_argument("--memory", choices=("binary", "encoded"), default="encoded")
     parser.add_argument("--controller", choices=("oracle", "zero"), default="oracle")
-    parser.add_argument("--task", choices=(*TASKS, "carry_counter_8"), default="gated_xor")
+    parser.add_argument("--task", choices=(*TASKS, "carry_counter_8", "conditional_logic_8"), default="gated_xor")
     args = parser.parse_args(argv)
-    if args.task == "carry_counter_8":
-        from . import carry8
-        memory = carry8.BinaryMemory() if args.memory == "binary" else carry8.EncodedMemory()
-        controller = carry8.reference_step if args.controller == "oracle" else carry8.zero_step
+    if args.task in ("carry_counter_8", "conditional_logic_8"):
+        from . import carry8, conditional8
+        profile = carry8 if args.task == "carry_counter_8" else conditional8
+        memory = profile.BinaryMemory() if args.memory == "binary" else profile.EncodedMemory()
+        controller = profile.reference_step if args.controller == "oracle" else profile.zero_step
     else:
         memory = BinaryMemory() if args.memory == "binary" else EncodedMemory()
         controller = partial(reference_step, task=args.task) if args.controller == "oracle" else zero_step
@@ -30,9 +31,9 @@ def main(argv=None):
     try:
         if os.path.lexists(args.output):
             raise FileExistsError(f"Artifact already exists: {args.output}")
-        if args.task == "carry_counter_8":
-            result = carry8.evaluate(controller, memory, seed=args.seed, episodes=args.episodes,
-                                     controller_label=label)
+        if args.task in ("carry_counter_8", "conditional_logic_8"):
+            result = profile.evaluate(controller, memory, seed=args.seed, episodes=args.episodes,
+                                      controller_label=label)
         else:
             result = evaluate(controller, memory, seed=args.seed, episodes=args.episodes,
                               controller_label=label, task=args.task)

@@ -1,6 +1,6 @@
 # SubstrateBench
 
-**STATUS: implemented — four-bit and eight-bit reference benchmark, version 0.3.0;
+**STATUS: implemented — four-bit and eight-bit reference benchmark, version 0.4.0;
 independently reviewed; installed acceptance passed.**
 
 SubstrateBench measures whether a fixed task controller can keep using a four-bit or eight-bit
@@ -10,7 +10,8 @@ no runtime dependencies.
 
 The initial harness is scoped in [SB-001](docs/promotion/SB-001.md) and the two
 additional task laws in [SB-002](docs/promotion/SB-002.md), and the bounded
-eight-bit reference profile in [SB-003](docs/promotion/SB-003.md);
+eight-bit carry profile in [SB-003](docs/promotion/SB-003.md) and conditional profile
+in [SB-004](docs/promotion/SB-004.md);
 repository boundaries are described in [AGENTS.md](AGENTS.md).
 
 The bundled controller is an exact-rule **reference oracle**, not a trained model.
@@ -31,6 +32,7 @@ python -m substratebench --controller zero --output results/negative.json
 substratebench --task carry_counter --output results/carry.json
 substratebench --task conditional_logic --output results/conditional.json
 substratebench --task carry_counter_8 --output results/carry8.json
+substratebench --task conditional_logic_8 --output results/conditional8.json
 ```
 
 The oracle commands run the reference controller. The zero control intentionally
@@ -233,7 +235,7 @@ storage channels with no arithmetic inside them; no physical carrier is bundled.
 The eight-bit profile is `carry-counter-eight-bit-memory-reference-0.3`, report
 `benchmark_version` is 0.3.0, and its schema version is 1. The preserved four-bit
 profiles still report their original contract version 0.2.0 even when installed
-in package 0.3.0. Cost counters cover visible interface/controller/Gold-label
+in package 0.4.0. Cost counters cover visible interface/controller/Gold-label
 calls. Wall time includes suite generation and evaluation, excluding installation,
 imports and artifact publication. External training, energy and internal physical
 work are not measured. Unknown external training costs remain JSON null.
@@ -267,6 +269,58 @@ Permuted episodes are derived paired cases. The profile validates eight-bit
 composition on supplied fixed interfaces; it makes no claim about wider state,
 unseen tasks, unknown substrate geometries, trained-source cost advantage or
 model transfer to physical memory.
+
+## Eight-bit conditional profile and interface reuse
+
+Use `--task conditional_logic_8` or `substratebench.conditional8`. This profile
+uses the same `carry8.Command(register, gate, value)`, memory classes and
+`reset/read/set_bit` ABI. Gate=0 holds all bits. With gate=1/value=0, swap q[j]
+and q[(j+1)%8]. With gate=1/value=1, flip q[j] and XOR q[(j+2)%8] with
+**OLD q[(j+1)%8]**. Updates are simultaneous and indices wrap modulo eight.
+
+```python
+from substratebench import carry8, conditional8, write_result
+
+memory = carry8.EncodedMemory()
+result = conditional8.evaluate(
+    conditional8.reference_step, memory, episodes=4,
+    controller_label="reference_oracle",
+)
+write_result(result, "results/conditional8-api.json")
+```
+
+The profile is `conditional-logic-eight-bit-memory-reference-0.4`, with report
+contract version 0.4.0 and schema version 1. Carry reports retain 0.3.0. The
+conditional profile owns its Gold labels and admission law; its 256 reads,
+4096 SET checks, 8192 supported-law transitions, L24/L128 routes, thresholds,
+FAIL/null behavior and exclusions follow the eight-bit contract above. Sequence
+IDs describe command content and deliberately match carry8 IDs for paired
+histories; `task_id` and profile identify the law. Paired histories across laws
+or transformed routes are not independent holdouts.
+
+The report marks the exact bundled callback `reference_oracle`, its zero source
+as `zero_source_control`, and other callbacks as `caller_supplied` with the
+caller-declared `controller_label` identity. Caller provenance, learned weights,
+freezing and absence of hidden history are unverified. API callers may pass
+`source_creation_wall_seconds` with finite nonnegative measured seconds; the
+runner records this as caller-reported and unaudited, outside runner totals.
+Missing source creation time, external training cost and energy stay UNKNOWN
+with JSON null values. This scalar ABI measures no margins, batch contexts or
+physical clock, and implements no wait or matched-time sham.
+
+[examples/reuse_memory_two_tasks.py](examples/reuse_memory_two_tasks.py) creates
+one encoded memory object, runs carry, resets that same object, and runs
+conditional with its unchanged codec. From any directory after installing:
+
+```sh
+python /path/to/checkout/examples/reuse_memory_two_tasks.py --episodes 4 --output-dir results/two-tasks
+```
+
+The example writes separate carry and conditional reference reports with paired
+command histories. The between-task reset is lifecycle work outside both
+evaluation ledgers. It demonstrates reuse of the memory interface and object;
+oracle PASS provides no learned-transfer, physical-memory or cost-advantage
+evidence. Learner training and known-model calibration recipes remain future work.
 
 Licensing terms have not yet been selected. No redistribution license is granted
 by this initial repository import.
