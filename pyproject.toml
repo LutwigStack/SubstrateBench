@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "substratebench"
-version = "0.2.0"
-description = "A reproducible reference benchmark for replacing four-bit task memory"
+version = "0.3.0"
+description = "Reproducible four-bit and eight-bit task-memory reference benchmarks"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []

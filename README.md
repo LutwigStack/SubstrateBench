@@ -1,14 +1,16 @@
 # SubstrateBench
 
-**STATUS: implemented — public reference benchmark, version 0.2.0.**
+**STATUS: implemented — four-bit and eight-bit reference benchmark, version 0.3.0;
+independently reviewed; installed acceptance passed.**
 
-SubstrateBench measures whether a fixed task controller can keep using a four-bit
+SubstrateBench measures whether a fixed task controller can keep using a four-bit or eight-bit
 memory after replacing its storage implementation. The package is a small,
 reproducible digital benchmark that other people can install and extend. It has
 no runtime dependencies.
 
 The initial harness is scoped in [SB-001](docs/promotion/SB-001.md) and the two
-additional task laws in [SB-002](docs/promotion/SB-002.md);
+additional task laws in [SB-002](docs/promotion/SB-002.md), and the bounded
+eight-bit reference profile in [SB-003](docs/promotion/SB-003.md);
 repository boundaries are described in [AGENTS.md](AGENTS.md).
 
 The bundled controller is an exact-rule **reference oracle**, not a trained model.
@@ -28,6 +30,7 @@ python -m substratebench --memory binary --output results/binary.json
 python -m substratebench --controller zero --output results/negative.json
 substratebench --task carry_counter --output results/carry.json
 substratebench --task conditional_logic --output results/conditional.json
+substratebench --task carry_counter_8 --output results/carry8.json
 ```
 
 The oracle commands run the reference controller. The zero control intentionally
@@ -36,7 +39,7 @@ reference-profile criteria passed. Exit code 2 means invalid arguments, malforme
 controller output, or an I/O error. Output paths must be new: existing artifacts
 are never overwritten. Results are compact JSON with raw commands and predictions.
 
-The default run evaluates 448 sequences: 64 per role, four random lengths
+The default four-bit run evaluates 448 sequences: 64 per role, four random lengths
 (12, 24, 64, 128), and three descriptive roles (history, gate, repeat).
 `--seed 42` and `--episodes 64` are explicit reproducibility settings. Episode
 count must be even and between 2 and 128.
@@ -175,6 +178,95 @@ in Python. It does not implement the broader proposed black-box dynamical-slot
 benchmark, learned adapters, held-out substrate families, a cost advantage from
 pretraining, or a leaderboard. The research vision is recorded in the lab without
 presenting planned features as implemented.
+
+## Eight-bit carry profile
+
+Use `--task carry_counter_8` or the separate `substratebench.carry8` API. Existing
+top-level commands and memory classes stay four-bit. The new profile has its own
+`Command(register, gate, value)`, little-endian eight-bit state, and concrete
+`BinaryMemory` and `EncodedMemory`. Gate=0 preserves all bits; gate=1 adds
+`2**register` when value=1 and subtracts it when value=0, modulo 256.
+
+```python
+from substratebench import carry8, write_result
+
+result = carry8.evaluate(
+    carry8.reference_step,  # Exact arithmetic oracle; replace with a fixed callback.
+    carry8.EncodedMemory(),
+    seed=42,
+    episodes=64,
+    controller_label="reference_oracle",
+)
+write_result(result, "results/carry8-api.json")
+```
+
+A custom callback receives only the currently read eight bits and an eight-bit
+command, and returns exactly eight Python integer bits. It must have fixed
+weights and retain no task history outside memory. These are caller obligations,
+not properties verified by this Python runner. The bits-only API measures no
+logit margin and performs no Torch batch-context checks.
+
+Admission checks all 256 readable states, 4096 generic SET operations preserving
+the other seven bits, and all 8192 state-command transitions of the supplied
+source. These are finite-domain qualification checks, not unseen-state tests.
+Failed memory admission reports `interface_not_qualified`; failed source-law
+admission reports `source_not_qualified`. Long-route endpoints remain JSON null,
+route status is `not_attempted`, and their call costs are zero. Invalid callback
+outputs are technical errors and propagate without publishing a result.
+
+Qualified sources execute 64 sequences of length 24 and 64 of length 128 by
+default, with normal and register-permuted routes and actual zero-write/reset
+ablations. Every base and permuted sequence includes an active command to one of
+registers 4–7. The rule depends only on commands. Positive routes require at
+least 99% prefix-state accuracy and 95% whole-sequence accuracy at each length;
+each ablation must reduce whole-sequence accuracy by at least 30 percentage
+points relative to normal. Predictions persist only through eight public SET
+calls after each command. Gold remains evaluator-local during these routes.
+Known qualification states are separately prepared through public writes.
+
+The CLI `--controller zero` supplies eight literal output zeros. It fails
+source-law admission and returns exit code 1; it is not a zero-weight neural
+network with a model-specific logit tie rule. Oracle PASS validates this public
+harness, not learned-model transfer. Both concrete memories are known digital
+storage channels with no arithmetic inside them; no physical carrier is bundled.
+
+The eight-bit profile is `carry-counter-eight-bit-memory-reference-0.3`, report
+`benchmark_version` is 0.3.0, and its schema version is 1. The preserved four-bit
+profiles still report their original contract version 0.2.0 even when installed
+in package 0.3.0. Cost counters cover visible interface/controller/Gold-label
+calls. Wall time includes suite generation and evaluation, excluding installation,
+imports and artifact publication. External training, energy and internal physical
+work are not measured. Unknown external training costs remain JSON null.
+
+The new sequence ID is SHA256 of this exact concatenation:
+
+1. `b"substratebench-carry8-sequence-v1\x00\x08onehot8-gate-value\x00"`;
+2. sequence length as four unsigned big-endian bytes;
+3. ordered command bytes: eight one-hot register bits, gate, value.
+
+`carry8.sequence_id` accepts 1–128 commands. The sampler is seeded MT19937 with
+explicit rejection sampling, the fixed active-upper-register condition, and
+base/permuted-ID rejection. `carry8.make_suite` returns `(suite, unique_excluded_count)`.
+Role/task names are not separately included in IDs. The namespace includes width
+and layout and is distinct from both old public four-bit and Lab eight-bit IDs.
+
+`exclude_ids` accepts at most 2,000,000 lowercase SHA256 entries, including
+duplicates; the reported count is the number of unique exclusions. Supply IDs
+regenerated from original ordered commands in this namespace. The runner cannot
+prove that the supplied list is complete, and a changed seed proves no such
+completeness. A Lab digest-only inventory cannot be converted. For original Lab
+rows with eight one-hot register bits followed by **value, gate**:
+
+```python
+commands = [carry8.Command(list(row[:8]).index(1), gate=int(row[9]), value=int(row[8]))
+            for row in original_lab_episode_rows]
+new_public_id = carry8.sequence_id(commands)
+```
+
+Permuted episodes are derived paired cases. The profile validates eight-bit
+composition on supplied fixed interfaces; it makes no claim about wider state,
+unseen tasks, unknown substrate geometries, trained-source cost advantage or
+model transfer to physical memory.
 
 Licensing terms have not yet been selected. No redistribution license is granted
 by this initial repository import.
