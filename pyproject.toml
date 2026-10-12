@@ -4,11 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "substratebench"
-version = "0.4.0"
-description = "Reproducible four-bit and eight-bit task-memory reference benchmarks"
+version = "0.5.0"
+description = "Reproducible task-memory reference benchmarks and scalar public memory adapter"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
+
+[project.optional-dependencies]
+demo = ["numpy==2.2.6"]
 
 [project.scripts]
 substratebench = "substratebench.cli:main"

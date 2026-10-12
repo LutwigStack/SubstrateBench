@@ -1,17 +1,18 @@
 # SubstrateBench
 
-**STATUS: implemented — four-bit and eight-bit reference benchmark, version 0.4.0;
+**STATUS: implemented — four-bit and eight-bit reference benchmark, version 0.5.0;
 independently reviewed; installed acceptance passed.**
 
 SubstrateBench measures whether a fixed task controller can keep using a four-bit or eight-bit
 memory after replacing its storage implementation. The package is a small,
-reproducible digital benchmark that other people can install and extend. It has
-no runtime dependencies.
+reproducible benchmark that other people can install and extend. The core has
+no runtime dependencies; its optional public simulator example uses NumPy.
 
 The initial harness is scoped in [SB-001](docs/promotion/SB-001.md) and the two
 additional task laws in [SB-002](docs/promotion/SB-002.md), and the bounded
 eight-bit carry profile in [SB-003](docs/promotion/SB-003.md) and conditional profile
-in [SB-004](docs/promotion/SB-004.md);
+in [SB-004](docs/promotion/SB-004.md), and the scalar public memory adapter
+in [SB-005](docs/promotion/SB-005.md);
 repository boundaries are described in [AGENTS.md](AGENTS.md).
 
 The bundled controller is an exact-rule **reference oracle**, not a trained model.
@@ -79,7 +80,8 @@ The memory integration boundary is equally small: `reset()`, `read()` returning
 four logical bits, and `set_bit(register, value)`. `BinaryMemory` stores bits
 directly. `EncodedMemory` stores a channel permutation and inversion, with an
 explicit known codec and no second copy of logical state. Both support exact
-digital reset; this release makes no claim about physical or unknown substrates.
+digital reset. The optional eight-bit simulated public memory is described below;
+these four-bit classes make no claim about unknown substrates.
 
 ## What is measured
 
@@ -177,7 +179,7 @@ cannot be converted without the original command arrays.
 
 This release replaces **memory storage**, while the controller's computation stays
 in Python. It does not implement the broader proposed black-box dynamical-slot
-benchmark, learned adapters, held-out substrate families, a cost advantage from
+benchmark, learned task sources, held-out substrate families, a cost advantage from
 pretraining, or a leaderboard. The research vision is recorded in the lab without
 presenting planned features as implemented.
 
@@ -230,12 +232,13 @@ The CLI `--controller zero` supplies eight literal output zeros. It fails
 source-law admission and returns exit code 1; it is not a zero-weight neural
 network with a model-specific logit tie rule. Oracle PASS validates this public
 harness, not learned-model transfer. Both concrete memories are known digital
-storage channels with no arithmetic inside them; no physical carrier is bundled.
+storage channels with no arithmetic inside them. The optional simulated public
+carrier is described below.
 
 The eight-bit profile is `carry-counter-eight-bit-memory-reference-0.3`, report
 `benchmark_version` is 0.3.0, and its schema version is 1. The preserved four-bit
 profiles still report their original contract version 0.2.0 even when installed
-in package 0.4.0. Cost counters cover visible interface/controller/Gold-label
+in package 0.5.0. Cost counters cover visible interface/controller/Gold-label
 calls. Wall time includes suite generation and evaluation, excluding installation,
 imports and artifact publication. External training, energy and internal physical
 work are not measured. Unknown external training costs remain JSON null.
@@ -320,7 +323,83 @@ The example writes separate carry and conditional reference reports with paired
 command histories. The between-task reset is lifecycle work outside both
 evaluation ledgers. It demonstrates reuse of the memory interface and object;
 oracle PASS provides no learned-transfer, physical-memory or cost-advantage
-evidence. Learner training and known-model calibration recipes remain future work.
+evidence. Learner training remains separate work.
+
+## Scalar public simulated memory
+
+`substratebench.public_memory8.PublicMemory8` implements the same eight-bit ABI
+using only a supplied public port and frozen public reader/pulse coefficients.
+It stores no host copy of the task bits. Every read obtains new observations
+from both banks; a failed operation permanently breaks the adapter.
+
+The optional installed recipe generates all of its own assets. From a checkout,
+install the extra and then run from any directory:
+
+```sh
+python -m pip install '.[demo]'
+python -m substratebench.public_memory8_demo --output /path/to/new-output-directory
+```
+
+The default is seed 42, two episodes at each existing L24/L128 length, and a
+1800-second internal deadline. It executes each law's complete 256-state READ,
+4096 preserving SET and 8192 exact-source gates, followed by normal, permutation,
+zero-write and reset routes. This generates about three million public calls
+and a complete external binary journal. Reserve 2 GiB of output space. The fixed
+journal quotas admit two or four episodes; larger counts fail before any probe.
+The default 64-episode digital profiles remain unchanged. Call counts are not a
+runtime guarantee. Interrupted outputs retain their prefix and error receipt;
+use a new output directory for another run.
+
+The recipe fits one reader and pulse set per bank from 12 public calls in total.
+It writes `coefficients.json`, private simulation geometry, every primitive
+request/response and private state, operation ranges, separate ordinary task
+reports, a finite 32-SET/64-idle retention diagnostic, scoped wall/CPU meters,
+and `manifest.json` containing each file's size and SHA256. These are new local
+results, with no historical checkpoint or journal download required. The core
+package remains standard-library only; the demo pins NumPy 2.2.6.
+
+To connect another inspected port, load the generated public artifact by its
+manifest digest and supply that memory to the existing evaluator:
+
+```python
+from substratebench import carry8
+from substratebench.public_memory8 import PublicMemory8
+
+memory = PublicMemory8.from_json(
+    public_port, "coefficients.json", sha256=coefficient_file_sha256,
+)
+result = carry8.evaluate(carry8.reference_step, memory, episodes=2,
+                         controller_label="reference_oracle")
+result["scope"] = "caller-supplied scalar public memory; CPU reference oracle"
+```
+
+The port exposes `reset(lane, 1)`, `step(lane, [one_row_of_16])` and
+`observe(lane) -> [one_row_of_32]` using Python lists or tuples, and owns
+transport identity, deadlines and cleanup. Its reset must perform the declared
+eight-tick cold reset. Coefficient artifacts are limited to 64 KiB and exactly
+520 finite numbers; unsupported schemas and checksum mismatches fail closed.
+The manifest establishes integrity of locally generated assets, not remote
+authenticity. A custom port's physical behavior requires its own qualification.
+
+The example's private state stays in a known noiseless discrete-tanh simulator.
+The task rule is a CPU reference oracle. The retention diagnostic covers one
+fixed history, ending in all-one state; it does not establish all-state or
+unbounded retention. Stock zero-write performs no SET or simulated time, so the
+controls are not matched in time. A passing recipe report remains pending an
+independent complete physics/primitive/adapter replay; it is not learned-source
+transfer, unknown-device identification, energy measurement or a cost win.
+The optional independent checker is published in the Lab's
+[public-memory8-sb005-proof](https://github.com/LutwigStack/substratebench-lab/tree/main/research/public-memory8-sb005-proof)
+study. It consumes newly generated assets; the canonical package imports no Lab
+code. Promotion evidence and exact audit commands are recorded in
+[SB-005](docs/promotion/SB-005.md).
+
+The promoted candidate's newly generated E2 run passed independent complete B1
+conformance: all 256 READ and 4096 preserving SET cases per law, complete
+reference routes and 96/96 retention checks. Every primitive/macro record was
+consumed and physical/observation reconstruction error was zero. This is one
+known noiseless fixture with paired descriptive histories; a new run still needs
+its own independent checker result.
 
 Licensing terms have not yet been selected. No redistribution license is granted
 by this initial repository import.
